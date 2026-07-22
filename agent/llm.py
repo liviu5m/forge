@@ -1,8 +1,10 @@
 from typing import Any, List, Optional
 from dotenv import load_dotenv
 from litellm import completion
+import os
 
 load_dotenv()
+os.environ["LITELLM_LOG"] = "ERROR"
 
 
 def call_llm(
@@ -22,7 +24,7 @@ def call_llm(
             messages=messages,
             fallbacks=[
                 "openrouter/openai/gpt-oss-20b:free",
-                "gemini/gemini-2.5-flash",
+                "gemini/gemini-1.5-flash",
                 "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
                 "openrouter/qwen/qwen3-coder:free",
                 "groq/llama-3.3-70b-versatile",

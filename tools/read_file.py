@@ -17,11 +17,19 @@ def read_file(
         The file contents as a string, or an error message if it fails.
     """
     try:
-        print("Reading file..." + path)
         file_path = Path(path)
 
         if not file_path.exists():
-            return f"Error: File '{path}' does not exist."
+            filename = file_path.name
+            matches = list(Path(".").rglob(filename))
+
+            if len(matches) == 1:
+                file_path = matches[0]
+            elif len(matches) > 1:
+                return f"Error: Multiple files found for '{filename}': {', '.join(str(m) for m in matches)}"
+            else:
+                matches_str = ", ".join(str(m) for m in matches)
+                return f"Error: Multiple files found for '{filename}': [{matches_str}]. Please specify the exact path."
         if not file_path.is_file():
             return f"Error: Path '{path}' is a directory, not a file."
 
