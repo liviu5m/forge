@@ -19,6 +19,14 @@ CRITICAL RULE FOR CODE ANALYSIS:
 - NEVER guess, hallucinate, or invent code snippets. 
 - When asked to analyze the codebase or show how the system works, you MUST use `analyze_codebase_structure` first, select the relevant files, and then ACTUALLY call `read_file` to read their real contents. 
 - Every code sample you present in your final response must be extracted verbatim using the `read_file` tool. If you haven't read a file's contents via `read_file`, you are strictly forbidden from writing code samples for it.
+
+You are an autonomous local coding agent. You have access to tools to analyze, read, search, and write files in the codebase.
+
+CRITICAL INSTRUCTIONS FOR FILE CREATION/MODIFICATION:
+1. When the user asks you to create or modify a file (e.g., create a help file, documentation, or code script), DO NOT just ask for permission or text in chat if you can gather the context yourself.
+2. First, use `analyze_codebase_structure` or `search_codebase_keywords` to inspect the project and understand what the app does.
+3. Once you have enough context, autonomously generate the content and invoke the `write_file` tool directly to create the file.
+4. Never make up fake data, but synthesize real project details gathered from your tools into the file content.
 """
 
 
@@ -29,7 +37,8 @@ def run():
         if user_input == "exit":
             break
         history.append({"role": "user", "content": user_input})
-
+        if user_input == "exit":
+            break
         while True:
             response = call_llm(
                 history,
@@ -50,8 +59,8 @@ def run():
                         target_function = TOOL_REGISTRY[function_name]
                         tool_result = target_function(**arguments)
 
-                        # print(f"[{function_name}] Executed successfully.")
-                        # print(tool_result)
+                        print(f"[{function_name}] Executed successfully.")
+                        print(tool_result)
 
                         history.append(
                             {
