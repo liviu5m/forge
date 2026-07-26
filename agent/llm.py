@@ -8,33 +8,62 @@ os.environ["LITELLM_LOG"] = "ERROR"
 
 
 def call_llm(
-    messages,
+    messages: List[dict],
     tools: Optional[List[Any]] = None,
     tool_choice: Optional[str] = None,
     system: str = "",
 ):
     """
-    Calls the primary model with an automatic fallback chain spanning Groq,
-    Google AI Studio, and OpenRouter free-tier models. If the primary model
-    hits rate limits or errors, LiteLLM automatically shifts to the next backup.
+    Calls the primary model using OmniRouter with robust fallback options.
     """
+    formatted_messages = messages
+    if system:
+        formatted_messages = [{"role": "system", "content": system}] + list(messages)
+
     try:
         response = completion(
-            model="openrouter/openrouter/free",
-            messages=messages,
-            fallbacks=[
-                "openrouter/openai/gpt-oss-20b:free",
-                "gemini/gemini-1.5-flash",
-                "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-                "openrouter/qwen/qwen3-coder:free",
-                "groq/llama-3.3-70b-versatile",
-                "groq/llama-3.1-8b-instant",
-            ],
+            model="openai/auto",
+            api_base="http://localhost:20128/v1",
+            api_key="omniroute",
+            messages=formatted_messages,
             max_tokens=4096,
             tools=tools,
             tool_choice=tool_choice,
         )
         return response
     except Exception as e:
-        print(f"All free fallback providers exhausted: {e}")
+        print(f"OmniRouter execution and fallbacks exhausted: {e}")
         raise
+
+
+# def call_llm(
+#     messages,
+#     tools: Optional[List[Any]] = None,
+#     tool_choice: Optional[str] = None,
+#     system: str = "",
+# ):
+#     """
+#     Calls the primary model with an automatic fallback chain spanning Groq,
+#     Google AI Studio, and OpenRouter free-tier models. If the primary model
+#     hits rate limits or errors, LiteLLM automatically shifts to the next backup.
+#     """
+#     try:
+#         response = completion(
+#             model="openrouter/openrouter/free",
+#             messages=messages,
+#             fallbacks=[
+#                 "openrouter/openai/gpt-oss-20b:free",
+#                 "gemini/gemini-1.5-flash",
+#                 "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+#                 "openrouter/qwen/qwen3-coder:free",
+#                 "groq/llama-3.3-70b-versatile",
+#                 "groq/llama-3.1-8b-instant",
+#             ],
+#             max_tokens=4096,
+#             tools=tools,
+#             tool_choice=tool_choice,
+#         )
+#         return response
+#     except Exception as e:
+#         print(f"All free fallback providers exhausted: {e}")
+#         raise

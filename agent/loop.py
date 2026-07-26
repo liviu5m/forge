@@ -1,54 +1,166 @@
 from agent.llm import call_llm
+from agent.memory import list_sessions, load_session, save_session
 from tools.tools import TOOL_REGISTRY, my_tools
 from tools.read_file import (
     read_file,
 )
 import json
+import inspect
+from typing import Callable, Any
+import os
 
 SYSTEM_PROMPT = """You are an autonomous coding agent. 
-CRITICAL: Whenever you want to use a tool, you must use the platform's native tool-calling function structure. Never output raw tags like <function=...>.
 
-You are an autonomous AI coding agent. When asked to analyze or modify the codebase:
-1. First, use `analyze_codebase_structure` to understand the project layout.
-2. Review the file tree and identify which specific files are relevant to the user's task.
-3. Use `read_file` to inspect the contents of those relevant files before giving your final answer. Do not guess contents without reading them first.
+CRITICAL TOOL-CALLING RULE:
+- Whenever you want to use a tool, you must use the platform's native tool-calling function structure. Never output raw tags like <function=...>.
 
-You are an autonomous AI coding agent. 
+TASK CLASSIFICATION & EFFICIENCY:
+- For simple, isolated tasks (e.g., writing a standalone text file, answering general coding logic, or running a direct command), DO NOT waste time analyzing the entire codebase structure. Just perform the task directly.
+- For tasks requiring codebase integration, context, or modification of existing files, follow the rigorous workflow below.
 
-CRITICAL RULE FOR CODE ANALYSIS:
-- NEVER guess, hallucinate, or invent code snippets. 
-- When asked to analyze the codebase or show how the system works, you MUST use `analyze_codebase_structure` first, select the relevant files, and then ACTUALLY call `read_file` to read their real contents. 
-- Every code sample you present in your final response must be extracted verbatim using the `read_file` tool. If you haven't read a file's contents via `read_file`, you are strictly forbidden from writing code samples for it.
-
-You are an autonomous local coding agent. You have access to tools to analyze, read, search, and write files in the codebase.
-
-CRITICAL INSTRUCTIONS FOR FILE CREATION/MODIFICATION:
-1. When the user asks you to create or modify a file (e.g., create a help file, documentation, or code script), DO NOT just ask for permission or text in chat if you can gather the context yourself.
-2. First, use `analyze_codebase_structure` or `search_codebase_keywords` to inspect the project and understand what the app does.
-3. Once you have enough context, autonomously generate the content and invoke the `write_file` tool directly to create the file.
-4. Never make up fake data, but synthesize real project details gathered from your tools into the file content.
+WORKFLOW FOR CODEBASE & FILE MODIFICATION TASKS:
+1. First, use `analyze_codebase_structure` or `search_codebase_keywords` to understand the project layout before guessing or editing.
+2. NEVER guess, hallucinate, or invent code snippets. When referencing existing files, you MUST use `read_file` to inspect their contents verbatim.
+3. When creating or modifying files (`write_file` or `edit_file`), autonomously generate the content using real project details gathered from your tools.
+4. Whenever you modify or create a file, you MUST immediately call `run_tests` (or `run_terminal_commands` to run tests) to verify your changes for errors before responding to the user.
 """
 
 
-def run():
-    history = []
+def initiate_session() -> str:
+    """
+    Displays past sessions and prompts the user to either
+    select an existing session or create/type a new one.
+    """
+    sessions = list_sessions()
+
+    print("\n" + "─" * 50)
+    print("📂 SESSION MANAGER")
+    print("─" * 50)
+
+    if sessions:
+        print("Available previous sessions:")
+        for idx, session in enumerate(sessions, start=1):
+            print(f"  {idx}. {session}")
+    else:
+        print("No previous sessions found.")
+
+    print("\nOptions:")
+    print("- Enter a number to load an existing session.")
+    print("- Type a new name to create a fresh session.")
+    print("- Press Enter directly to use 'default_session'.")
+    print("─" * 50)
+
+    choice = input("Select or create session > ").strip()
+
+    if not choice:
+        return "default_session"
+
+    if choice.isdigit():
+        idx = int(choice) - 1
+        if 0 <= idx < len(sessions):
+            selected_session = sessions[idx]
+            print(f"✔️ Resumed session: '{selected_session}'")
+            return selected_session
+        else:
+            print("⚠️ Invalid session number. Creating a new session with that input.")
+
+    return choice
+
+
+def print_session_history(history):
+    for msg in history:
+        role = msg.get("role", "unknown").upper()
+        content = msg.get("content", "")
+        print(
+            f"  [{role}]: {content[:100]}..."
+            if len(content) > 100
+            else f"  [{role}]: {content}"
+        )
+
+
+def prune_message_history(messages, max_recent_turns=4):
+    """
+    Truncates bulky tool outputs from older turns while preserving
+    user instructions, assistant turns, and the most recent interactions.
+    """
+    pruned_messages = []
+    total_messages = len(messages)
+
+    cutoff_index = max(0, total_messages - (max_recent_turns * 2))
+
+    for i, msg in enumerate(messages):
+        # Preserve the most recent interactions based on cutoff index
+        if i >= cutoff_index:
+            pruned_messages.append(msg)
+            continue
+
+        # For older messages containing heavy tool data or outputs, truncate them
+        if (
+            msg.get("role") == "tool"
+            or msg.get("function_call")
+            or msg.get("tool_calls")
+        ):
+            truncated_msg = msg.copy()
+            if (
+                isinstance(truncated_msg.get("content"), str)
+                and len(truncated_msg["content"]) > 300
+            ):
+                truncated_msg["content"] = (
+                    "[Old tool output truncated for context length optimization]"
+                )
+            pruned_messages.append(truncated_msg)
+        else:
+            pruned_messages.append(msg)
+
+    return pruned_messages
+
+
+def run(session_name: str):
+    print(f"🚀 Initiating session '{session_name}'...")
+
+    history = load_session(session_name)
+
+    if history:
+        print(f"Resumed past session with {len(history)} messages.")
+        print_session_history(history)
+    else:
+        print("Starting a fresh session.")
     while True:
         user_input = input("> ")
+        if session_name == "default_session":
+            session_name = user_input
         if user_input == "exit":
             break
-        history.append({"role": "user", "content": user_input})
+        if user_input.strip() == "clear":
+            history.clear()
+            os.system("cls" if os.name == "nt" else "clear")
+            continue
+        history.append({"role": "assistant", "content": user_input})
         if user_input == "exit":
             break
         while True:
+            optimized_history = prune_message_history(history, max_recent_turns=4)
             response = call_llm(
-                history,
+                optimized_history,
                 tools=my_tools,
                 system=SYSTEM_PROMPT,
             )
             message = response.choices[0].message
+            msg_dict = {"role": "user", "content": message.content}
+            if hasattr(message, "tool_calls") and message.tool_calls:
+                msg_dict["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in message.tool_calls
+                ]
 
-            history.append(message)
-
+            history.append(msg_dict)
             if message.tool_calls:
                 for tool_call in message.tool_calls:
                     function_name = tool_call.function.name
@@ -57,10 +169,11 @@ def run():
 
                     if function_name in TOOL_REGISTRY:
                         target_function = TOOL_REGISTRY[function_name]
-                        tool_result = target_function(**arguments)
-
-                        print(f"[{function_name}] Executed successfully.")
-                        print(tool_result)
+                        tool_result = safe_dispatch(
+                            target_function, arguments, function_name
+                        )
+                        # print(f"[{function_name}] Executed successfully.")
+                        # print(tool_result)
 
                         history.append(
                             {
@@ -79,8 +192,82 @@ def run():
                                 "content": error_msg,
                             }
                         )
-
+                    save_session(session_name, history)
                 continue
             else:
                 print(message.content)
                 break
+
+        save_session(session_name, history)
+
+
+def safe_dispatch(
+    target_function: Callable[..., Any], arguments: dict, function_name: str
+) -> str:
+    """
+    Safely dispatches arguments to a function, catching missing parameters,
+    unexpected arguments, or type mismatches by inspecting the function signature.
+
+    Args:
+        target_function: The callable tool function to execute.
+        arguments: A dictionary of key-value arguments provided by the LLM.
+
+    Returns:
+        The result of the function execution as a string, or an error message
+        formatted for the LLM to understand and self-correct.
+    """
+    destructive_tools = {"write_file", "edit_file", "run_terminal_commands"}
+    if function_name in destructive_tools:
+        print("\n" + "─" * 60)
+        print(f"🛡️  [SECURITY GATE] Action Required: **{function_name}**")
+        print("─" * 60)
+
+        if "path" in arguments:
+            print(f"📁 Target File: {arguments['path']}")
+        elif "file_path" in arguments:
+            print(f"📁 Target File: {arguments['file_path']}")
+
+        for key, value in arguments.items():
+            if key in ["path", "file_path"]:
+                continue
+
+            print(f"🔹 {key.replace('_', ' ').capitalize()}:")
+            if key == "content" and isinstance(value, str):
+                indented_content = "\n".join(
+                    ["    " + line for line in value.splitlines()]
+                )
+                print(indented_content)
+            elif key == "target_content" or key == "new_content":
+                print(f"    ```\n{value}\n    ```")
+            else:
+                print(f"    {value}")
+
+        print("─" * 60)
+
+        while True:
+            choice = input("Do you want to allow this action? [y/N]: ").strip().lower()
+            if choice in ["y", "yes"]:
+                print("✔️ Action approved by user.\n")
+                break
+            elif choice in ["n", "no", ""]:
+                print("❌ Action rejected by user.\n")
+                return "Error: Tool execution aborted by user via Human-in-the-Loop permission gate."
+            else:
+                print("Please enter 'y' or 'n'.")
+    try:
+        sig = inspect.signature(target_function)
+
+        bound_args = sig.bind(**arguments)
+        bound_args.apply_defaults()
+
+        result = target_function(*bound_args.args, **bound_args.kwargs)
+
+        return str(result)
+
+    except TypeError as e:
+        return (
+            f"Error: Invalid tool arguments provided ({str(e)}). "
+            "Please check the required parameter names and types for this tool and try again."
+        )
+    except Exception as e:
+        return f"Error executing tool: {str(e)}"

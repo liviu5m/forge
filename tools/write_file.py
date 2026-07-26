@@ -44,8 +44,25 @@ def edit_file(path: str, target_content: str, new_content: str) -> str:
 
         if target_content not in content:
             return f"Error: Target content not found in '{path}'. Make sure the snippet matches exactly."
+        occurrences = content.count(target_content)
+        if occurrences > 1:
+            lines = content.splitlines()
+            matching_lines = []
+            for i, line in enumerate(lines, start=1):
+                if target_content.splitlines()[0] in line:
+                    matching_lines.append(str(i))
+            print(matching_lines)
+            lines_str = (
+                ", ".join(matching_lines) if matching_lines else "multiple locations"
+            )
 
-        # Perform the targeted replacement
+            return (
+                f"Error: Found {occurrences} matching occurrences of the target content in '{path}' "
+                f"(around line(s): {lines_str}). "
+                "Ambiguous edits are blocked. Please include more surrounding context lines "
+                "(such as the surrounding function definition) to make your target unique."
+            )
+
         updated_content = content.replace(target_content, new_content, 1)
         file_path.write_text(updated_content, encoding="utf-8")
 

@@ -1,3 +1,4 @@
+from tests.run_tests import run_tests
 from tools.codebase import analyze_codebase_structure, search_codebase_keywords
 from tools.read_file import read_file
 from tools.write_file import edit_file, write_file
@@ -8,6 +9,7 @@ TOOL_REGISTRY = {
     "search_codebase_keywords": search_codebase_keywords,
     "write_file": write_file,
     "edit_file": edit_file,
+    "run_tests": run_tests,
 }
 read_file_schema = {
     "type": "function",
@@ -122,10 +124,34 @@ edit_file_schema = {
         },
     },
 }
+
+run_tests_schema = {
+    "type": "function",
+    "function": {
+        "name": "run_tests",
+        "description": "Execute unit tests on a specified test file using python3.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "The path to the test file to execute (e.g., tests/test_math.py)",
+                },
+                "test_framework": {
+                    "type": "string",
+                    "description": "Testing framework to use, defaults to pytest.",
+                },
+            },
+            "required": ["file_path"],
+        },
+    },
+}
+
 my_tools = [
     read_file_schema,
     analyze_codebase_structure_schema,
     search_codebase_keywords_schema,
     write_file_schema,
     edit_file_schema,
+    run_tests_schema,
 ]
