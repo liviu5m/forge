@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from agent.llm import call_llm
 from agent.memory import list_sessions, load_session, save_session
 from tools.tools import TOOL_REGISTRY, my_tools
@@ -8,9 +10,13 @@ import json
 import inspect
 from typing import Callable, Any
 import os
+import json
+import re
 
 SYSTEM_PROMPT = """You are an autonomous coding agent. 
-
+CRITICAL ENFORCEMENT: 
+- DO NOT answer in plain text if a tool can be used to fulfill the user's request. 
+- Always prefer calling a tool over asking the user for information.
 CRITICAL TOOL-CALLING RULE:
 - Whenever you want to use a tool, you must use the platform's native tool-calling function structure. Never output raw tags like <function=...>.
 
@@ -23,6 +29,23 @@ WORKFLOW FOR CODEBASE & FILE MODIFICATION TASKS:
 2. NEVER guess, hallucinate, or invent code snippets. When referencing existing files, you MUST use `read_file` to inspect their contents verbatim.
 3. When creating or modifying files (`write_file` or `edit_file`), autonomously generate the content using real project details gathered from your tools.
 4. Whenever you modify or create a file, you MUST immediately call `run_tests` (or `run_terminal_commands` to run tests) to verify your changes for errors before responding to the user.
+
+You have access to a set of specialized tools:
+- Use `read_file` to view file contents.
+- Use `analyze_codebase_structure` to inspect directory layouts and project architecture.
+- Use `search_codebase_keywords` to find specific symbols or keywords across source files.
+- Use `write_file` or `edit_file` to create or modify code.
+- Use `run_tests` to execute unit tests and verify functionality.
+- Use `run_type_check` to run MyPy static type checking and catch type errors.
+- Use `run_security_audit` to run Bandit security linting and detect vulnerabilities.
+- Use `extract_symbols` to explore file structures quickly instead of reading whole files blindly.
+- Use `preview_diff` to visually check changes before applying them.
+
+Guidelines for execution:
+- Run `run_type_check` to validate code health.
+- Run `run_security_audit` to validate code health.
+- Use `extract_symbols` to explore file structures quickly instead of reading whole files blindly.
+- Use `preview_diff` before applying complex edits.
 """
 
 
@@ -146,7 +169,7 @@ def run(session_name: str):
                 system=SYSTEM_PROMPT,
             )
             message = response.choices[0].message
-            msg_dict = {"role": "user", "content": message.content}
+            msg_dict = {"role": "assistant", "content": message.content}
             if hasattr(message, "tool_calls") and message.tool_calls:
                 msg_dict["tool_calls"] = [
                     {
@@ -161,6 +184,37 @@ def run(session_name: str):
                 ]
 
             history.append(msg_dict)
+
+            # if not getattr(message, "tool_calls", None) and message.content:
+            #     json_match = re.search(
+            #         r"```(?:json)?\s*({.*?})\s*```", message.content, re.DOTALL
+            #     )
+            #     if not json_match:
+            #         json_match = re.search(r"({.*?})", message.content, re.DOTALL)
+            #
+            #     if json_match:
+            #         try:
+            #             parsed_json = json.loads(json_match.group(1))
+            #             if "function" in parsed_json:
+            #                 func_name = parsed_json["function"]
+            #                 func_args = parsed_json.get("parameters", {})
+            #
+            #                 # Build a clean namespace object matching the expected structure
+            #                 mock_call = SimpleNamespace(
+            #                     id="fallback_call_1",
+            #                     type="function",
+            #                     function=SimpleNamespace(
+            #                         name=func_name,
+            #                         arguments=json.dumps(func_args),
+            #                     ),
+            #                 )
+            #
+            #                 setattr(message, "tool_calls", [mock_call])
+            #                 print(
+            #                     f"\n[SYSTEM] Caught text-based tool call for '{func_name}', routing to native execution loop."
+            #                 )
+            #         except json.JSONDecodeError:
+            #             pass
             if message.tool_calls:
                 for tool_call in message.tool_calls:
                     function_name = tool_call.function.name
@@ -172,8 +226,8 @@ def run(session_name: str):
                         tool_result = safe_dispatch(
                             target_function, arguments, function_name
                         )
-                        # print(f"[{function_name}] Executed successfully.")
-                        # print(tool_result)
+                        print(f"[{function_name}] Executed successfully.")
+                        print(tool_result)
 
                         history.append(
                             {

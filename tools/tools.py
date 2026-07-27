@@ -1,4 +1,10 @@
 from tests.run_tests import run_tests
+from tools.analyze_tools import (
+    extract_symbols,
+    preview_diff,
+    run_security_audit,
+    run_type_check,
+)
 from tools.codebase import analyze_codebase_structure, search_codebase_keywords
 from tools.read_file import read_file
 from tools.write_file import edit_file, write_file
@@ -10,6 +16,10 @@ TOOL_REGISTRY = {
     "write_file": write_file,
     "edit_file": edit_file,
     "run_tests": run_tests,
+    "run_type_check": run_type_check,
+    "run_security_audit": run_security_audit,
+    "extract_symbols": extract_symbols,
+    "preview_diff": preview_diff,
 }
 read_file_schema = {
     "type": "function",
@@ -147,6 +157,81 @@ run_tests_schema = {
     },
 }
 
+run_type_check_schema = {
+    "type": "function",
+    "function": {
+        "name": "run_type_check",
+        "description": "Runs MyPy static type checking on the repository or specified path to catch type errors.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "The file or directory path to type-check (defaults to current directory '.')",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+run_security_audit_schema = {
+    "type": "function",
+    "function": {
+        "name": "run_security_audit",
+        "description": "Runs Bandit security linting on the codebase to detect vulnerabilities.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "The file or directory path to audit (defaults to current directory '.')",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+extract_symbols_schema = {
+    "type": "function",
+    "function": {
+        "name": "extract_symbols",
+        "description": "Parses a Python file using AST to extract all classes, functions, their signatures, and docstrings cleanly.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to the Python file to analyze.",
+                },
+            },
+            "required": ["file_path"],
+        },
+    },
+}
+
+preview_diff_schema = {
+    "type": "function",
+    "function": {
+        "name": "preview_diff",
+        "description": "Generates a unified diff comparing the existing file content with the proposed new content before overwriting files.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to the target file.",
+                },
+                "new_content": {
+                    "type": "string",
+                    "description": "The proposed new text content for the file.",
+                },
+            },
+            "required": ["file_path", "new_content"],
+        },
+    },
+}
 my_tools = [
     read_file_schema,
     analyze_codebase_structure_schema,
@@ -154,4 +239,8 @@ my_tools = [
     write_file_schema,
     edit_file_schema,
     run_tests_schema,
+    run_type_check_schema,
+    run_security_audit_schema,
+    extract_symbols_schema,
+    preview_diff_schema,
 ]
